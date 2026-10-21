@@ -1,0 +1,20 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>dsm dock sweep</title>
+<style>body{margin:0;background:#0d0f12;color:#c8ccd4;font-family:system-ui,sans-serif;font-size:12px}
+.case{margin:6px 0 10px 4px}.cap{font-size:10px;color:#6b7280;padding:2px 0}
+iframe{display:block;border:1px solid #22262d;background:#14161a}</style></head><body>
+<div class="case"><div class="cap">viewport 2560px</div><iframe id="f2560" src="mock-frame.html" style="width:2560px;height:150px"></iframe></div>
+<div class="case"><div class="cap">viewport 1600px</div><iframe id="f1600" src="mock-frame.html" style="width:1600px;height:150px"></iframe></div>
+<div class="case"><div class="cap">viewport 1280px</div><iframe id="f1280" src="mock-frame.html" style="width:1280px;height:150px"></iframe></div>
+<div class="case"><div class="cap">viewport 1100px</div><iframe id="f1100" src="mock-frame.html" style="width:1100px;height:150px"></iframe></div>
+<div class="case"><div class="cap">viewport 900px</div><iframe id="f900" src="mock-frame.html" style="width:900px;height:150px"></iframe></div>
+<div class="case"><div class="cap">viewport 700px</div><iframe id="f700" src="mock-frame.html" style="width:700px;height:150px"></iframe></div>
+<script>
+window.__sweep = () => {
+  const rows = [];
+  for (const f of document.querySelectorAll('iframe')) {
+    rows.push(f.contentWindow.__run(false).after);
+  }
+  return rows;
+};
+</script>
+</body></html>
