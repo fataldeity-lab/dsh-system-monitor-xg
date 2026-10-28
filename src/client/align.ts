@@ -50,12 +50,23 @@ export function measureCard(row: HTMLElement): number {
   return widest
 }
 
-/** 行宽 = 卡片宽；允许换行；被截断的宿主统计项折行显示全（不要省略号）。 */
+/** 行宽与卡片宽的容差（px）：小于它视为宿主自己已对齐，不动内联 width。 */
+const TOLERANCE_PX = 2
+
+/**
+ * 行宽 = 卡片宽；允许换行；被截断的宿主统计项折行显示全（不要省略号）。
+ *
+ * 只在宿主自己没对齐时才写 width（|行宽 - 卡片宽| > 容差）。rc.2 的 dock 已经
+ * 用 `calc(100% - …)` + `max-width: calc(var(--dsh-composer-card-max-width) - …)`
+ * 收敛到卡片宽，此时这里退化为无操作、布局完全交还宿主；只有 dock 仍按 root
+ * 取宽的形态（hero 页等）才接管。
+ */
 export function alignDockRow(el: HTMLElement): AlignResult | null {
   const row = realRow(el)
   if (row === null) return null
   const cardW = measureCard(row)
-  if (cardW > 0) row.style.width = `${cardW}px`
+  const rowW0 = row.getBoundingClientRect().width
+  if (cardW > 0 && Math.abs(rowW0 - cardW) > TOLERANCE_PX) row.style.width = `${cardW}px`
   row.style.maxWidth = '100%'
   row.style.flexWrap = 'wrap'
   let wrapped = 0

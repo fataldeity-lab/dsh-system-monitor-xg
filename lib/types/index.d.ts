@@ -3,7 +3,7 @@
  * `system_metrics` tool.
  *
  * Host side provides everything the browser cannot:
- *  1. 定时采样 CPU / 内存 / GPU（算力 · 显存带宽 · 显存 · 功耗 · 温度 · 时钟）
+ *  1. 定时采样 CPU（含 ACPI 热区温度，5s 慢通道）/ 内存 / GPU（算力 · 显存带宽 · 显存 · 功耗 · 核心/显存温度 · 时钟）
  *  2. 瓶颈诊断（算力受限 / 带宽受限 / 功耗受限 / 热限制 / 显存容量）
  *  3. 生成阶段跟踪：prefill（计算密集）vs decode（带宽密集）两阶段负载对比
  *  4. REST API（底栏 1s 轮询）：/system-monitor/api/snapshot · /generations

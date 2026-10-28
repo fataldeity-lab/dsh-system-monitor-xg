@@ -1,5 +1,7 @@
 node_modules/
-*.bak-*
+.client-build/
+.verify/
 *.log
+*.bak-*
 .DS_Store
 dist/

@@ -1,98 +1,15 @@
 # dsh-system-monitor-xg
 
-DSH（DeepSeek Harness）宿主机负载监控插件：**CPU / 内存 / GPU 算力与显存带宽
-利用率、显存、功耗、温度**实时显示，并自动诊断推理瓶颈——**「GPU 占用高 ≠
-算力打满」**：decode 阶段 SM 大量时间在等显存返回数据，瓶颈常常是显存带宽
-而不是算力。
+**简体中文** · [English](README_EN.md)
+
+DSH（DeepSeek Harness）宿主机负载监控插件：**CPU 占用 + 温度 / 内存 / GPU
+算力与显存带宽利用率、显存、功耗、核心/显存温度**实时显示，并自动诊断推理
+瓶颈——**「GPU 占用高 ≠ 算力打满」**：decode 阶段 SM 大量时间在等显存返回
+数据，瓶颈常常是显存带宽而不是算力。
 
 [![DSH](https://img.shields.io/badge/DSH-0.1.0--rc.7-blue)](https://github.com/deepseek-ai/deepseek-harness)
 [![npm version](https://img.shields.io/npm/v/dsh-system-monitor-xg)](https://www.npmjs.com/package/dsh-system-monitor-xg)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-
-## 这个 fork（fataldeity-lab）改了什么 · v0.1.6
-
-上游：<https://github.com/liuhuagang/dsh-system-monitor-xg>（MIT，原作者保留版权）。
-本 fork 基于 **npm 上的 0.1.4**：先修「DSH Web 底栏被插件挤爆 / 整条底栏比输入框宽 /
-插件被压成两排」，0.1.6 再补三处设置/性能问题（见下）。**lib/ 已提交**，所以从 GitHub
-直接装不需要构建。
-
-### v0.1.6 变更（在 0.1.5 布局修复之上）
-
-1. **底栏渲染节流**：同一采样点（`ts` 相同）不再 `setState`。宿主采样间隔可配到 10s，
-   但客户端仍每秒轮询一次——以前每个采样周期要白刷 9 次 React 提交 + 底栏
-   ResizeObserver 对齐计算，这是「把刷新率调下来之后仍偶发卡一下」的残留来源。
-2. **`intervalMs` 上限 10s → 60s，越界时 `console.warn`**：以前写 15s/30s 会被静默夹回
-   10s，配置看起来生效了、实际没有，非常难排查。
-3. **删掉 `dsh.client.inject` 里不存在的 `@deepseek-ai/dsh-client-runtime`**：0.2.x 没有
-   这个包（loader 会静默跳过，所以不致命，但属于错误声明，也是各种「体检说兼容性未知」
-   的噪音来源）。
-
-> 不含上游 0.1.5–0.1.7 的 CPU 温度 / `thermal.ts` 热诊断 / GPU 稳健性改进。要那些能力
-> 需要把这里的布局修复 rebase 到上游 0.1.7（上游的 CPU 温度走独立慢通道，
-> 注释里明确写了「1s 会占掉半个核」，直接叠加到本 fork 的 1s 轮询上反而会更卡）。
-
-### 从 GitHub 安装
-
-改 Web profile 的 package.json（本机 ~/.dsh/profiles/web/package.json）里的依赖，然后重装：
-
-```json
-"dependencies": {
-  "dsh-system-monitor-xg": "github:fataldeity-lab/dsh-system-monitor-xg#v0.1.6"
-}
-```
-
-```sh
-cd ~/.dsh/profiles/web && pnpm install
-```
-
-cordis.patch.yml 里 insert: - id: dsh-system-monitor-xg 不用动。装完不需要重启 DSH：本部署挂了
-client-hmr，每 500ms stat 插件 bundle，变了就 clientModules.rebuilt(id) 重读字节并经
-/plugins/events 推给浏览器热更（只有把 client-hmr 关掉的部署才要整个 app 重启）。
-
-### 症状与根因（三层）
-
-1. 宿主 .uV2eYG_dock{display:flex;max-width:100%} 的 100% 参照 composer root（窗口减侧边留白），
-   而输入框卡片是 width:100% + max-width:var(--dsh-composer-card-max-width) → 卡片被卡住、dock
-   继续撑满。**任何**塞进 conversation.composer.dock 的插件都会溢出，只压插件自身宽度修不好。
-2. 插件的父层是 display:contents 的槽位包装（clientWidth 恒 0，见
-   @deepseek-ai/dsh-client-ui-renderer 的 ANCHOR_STYLE），width/flex-wrap 打上去无效；必须从
-   .dsm-wrap 往上找第一个 display 不为 contents 且宽 > 0 的真实布局行。
-3. 换行的 flex 容器只设 max-width 不够——它的 max-content 会缩成最宽那一项，width 也要显式设。
-
-### 修法
-
-- src/client/align.ts（新增）：realRow() 向上跳过 display:contents / 宽 0 的包装（≤12 跳）；
-  measureCard() 用 [data-composer-card] 取卡片宽（退化时取最宽兄弟）；alignDockRow() 给真实行打
-  width=cardW+px、maxWidth=100%、flexWrap=wrap，并把 scrollWidth > clientWidth 的子项（含宿主统计）
-  设 flexWrap=wrap —— 显示全，不用省略号。
-- src/client/SystemBar.tsx：wrapRef + useEffect（rAF 合并调度 + ResizeObserver 观察行 / 行父 / 自身
-  + window resize），侧栏开合与窗口缩放都会重算；根节点带 data-dsm-align="7" 作版本标记，
-  DevTools 里一眼能确认新字节已加载。
-- src/client/index.ts（CSS）：
-  - 无 JS 兜底：div:has(> [data-slot='conversation.composer.dock']){width:min(100%,var(--dsh-composer-card-max-width,100%));flex-wrap:wrap}
-  - .dsm-wrap{flex:1 0 100%;order:1;margin:-8px 0 0;min-width:0} → 独占一行排在宿主统计行下方；
-    dock 的 gap:12px 吃掉 8px，净留 4px，不会看着空一行。
-  - .dsm-bar{padding:0;line-height:20px}
-- 内容顺序不变：CPU 内存 │ GPU SM 带宽 │ 显存 功耗 温度 ●负载，窄窗靠 flex-wrap 自然折行。
-
-### 实测（真实 DSH Web；同一 dock 里还有 dsh-cost-meter 与一行 pills）
-
-| 场景 | cardW | dockW | dock 在卡片内 | 插件行宽 | 行数 | 裁切 |
-|---|---|---|---|---|---|---|
-| 修复前（!important 复刻 0.1.4） | 573 | 652 | ✗ 左右各溢 39.5px | 197.6 | 4 | 0 |
-| 修复后 vw=1264 | 672 | 672 | ✓ | 664 | 1 | 0 |
-| 修复后 vw=884 | 672 | 672 | ✓ | 664 | 1 | 0 |
-| 修复后 vw=684 | 573 | 573 | ✓ | 548.4 | 2 | 0 |
-
-dev/dock-align/ 是宿主 CSS + display:contents 包装的复刻 mock：node dev/dock-align/serve.mjs 后开
-mock-sweep.html，2560/1600/1280/1100/900/700 六档 cardW == dockW、越界 0、无裁切，除 700 档外单排。
-真页面做 A/B 复刻旧布局**必须用 !important 覆盖**——删内联会被插件自己的 ResizeObserver 立刻打回去。
-
-### 与上游 master 的差异
-
-上游 master 已有 src/thermal.ts 与 tests/（0.1.4 里没有），本 fork 基于 0.1.4 所以没有 thermal。
-要 thermal 就把上游 master 合过来后重跑 npm run build。顺带一提：lib/client.js.map 还是 0.1.4 的旧
-产物，重跑构建才会对上新行号（不影响运行，只影响 DevTools 断点映射）。
 
 ## 解决什么问题
 
@@ -111,12 +28,14 @@ nvidia-smi 有两个**正交**的利用率数字：
 | SM 高 + 带宽低 | **算力受限**（prefill 典型：计算饱和） |
 | 功耗 ≈ 上限 | 功耗墙 |
 | 显存占用 > 95% | 显存容量瓶颈（上下文受限） |
-| 高温 + SM 时钟降频 | 热限制 |
+| 核心高温 + SM 时钟降频，或显存温度 ≥ 95℃ | 热限制 |
 
 ## 特性
 
-- **Web 底栏实时显示**：CPU%、内存%、每张 GPU 的 SM 算力 / 显存带宽 /
-  显存 / 功耗 / 温度，叠加瓶颈徽标（算力=蓝、带宽=琥珀、功耗=橙、热/显存=红）
+- **Web 底栏实时显示**：CPU% + CPU 温度（`52℃`，ACPI 热区，5s 采样；
+  平台无传感器或权限不足时隐藏）、内存%、每张 GPU 的 SM 算力 / 显存带宽 /
+  显存 / 功耗 / 核心+显存温度（`77/68℃`；驱动未上报显存温度时仅核心温度），
+  叠加瓶颈徽标（算力=蓝、带宽=琥珀、功耗=橙、热/显存=红）
 - **生成阶段对比**：点击底栏展开最近 10 次生成的 **prefill vs decode**
   两阶段负载统计——prefill 算力密集、decode 带宽密集，两阶段对比是
   「占用高但算力不满」的量化证据
@@ -124,8 +43,9 @@ nvidia-smi 有两个**正交**的利用率数字：
   生成阶段对比、显存占用进程（评测报告可直接引用）
 - **负载 JSONL 落盘**：`~/.dsh/dsh-system-monitor/metrics-<日期>.jsonl`
   （每秒采样）+ `generations-<日期>.jsonl`（每次生成的阶段汇总）
-- **零运行时依赖**：CPU/内存用 Node 内置 API，GPU 解析 `nvidia-smi` CSV
-  ——无需 pip、无需原生模块、无需管理员权限
+- **零运行时依赖**：CPU/内存用 Node 内置 API，CPU 温度走 WMI（Windows）/
+  sysfs（Linux），GPU 解析 `nvidia-smi` CSV——无需 pip、无需原生模块、
+  无需管理员权限（CPU 温度在 Windows 上依赖 `root/wmi` 访问权限，见已知限制）
 - 多 GPU 支持（取最活跃 GPU 做瓶颈诊断）
 
 ## 安装（给使用者）
@@ -136,7 +56,7 @@ dsh plugin --profile web add dsh-system-monitor-xg
 
 # 2. 重启 DSH Web（生产模式无热装机制；重启方式与你平时启动 dsh 一致）
 #    重启后打开任意会话页，输入框下方（内置统计行右侧）出现负载条：
-#    CPU 12% 内存 34% │ GPU0 SM 45% 带宽 88% 显存 12/24G 160W 66℃ ●带宽受限
+#    CPU 12% 内存 34% │ GPU0 SM 45% 带宽 88% 显存 12/24G 160W 66/62℃ ●带宽受限
 
 # 3. 验证
 #    - 底栏每秒刷新；跑一次本地推理可见瓶颈徽标变化（带宽受限/算力受限…）
@@ -153,13 +73,19 @@ dsh plugin --profile web remove dsh-system-monitor-xg
 
 > 环境要求：NVIDIA GPU + 驱动自带 nvidia-smi（Windows 在 System32，Linux 在
 > /usr/bin）；无 NVIDIA GPU 时插件正常加载，GPU 段显示「不可用」，CPU/内存
-> 监控不受影响。开发模式（想改代码调试）用 `dsh plugin --profile web add <本仓库路径>`。
+> 监控不受影响。nvidia-smi 调用失败（驱动瞬态异常、GPU 复位、超时等）不会
+> 永久停用 GPU 监控：失败后自动进入冷却期重试（瞬态 5s / 二进制缺失 5min），
+> 采样成功即自动恢复；失败原因会打 host 日志并可通过 `system_metrics` 的
+> `lastGpuError` 字段查询。开发模式（想改代码调试）用
+> `dsh plugin --profile web add <本仓库路径>`。
 
 ## 使用
 
 - 底栏每 1 秒刷新一次，直接可读：
-  `CPU 12% 内存 34% │ GPU0 SM 45% 带宽 88% 显存 12.4/24G 160W 66℃ ●带宽受限`
-- 悬停查看细节（单核分布 / 时钟 / 功耗上限）；点击展开生成阶段对比表
+  `CPU 12% 42℃ 内存 34% │ GPU0 SM 45% 带宽 88% 显存 12.4/24G 160W 66/62℃ ●带宽受限`
+  （CPU 温度段紧随 CPU 占用段，平台无传感器或权限不足时隐藏；GPU 温度段为
+  `核心/显存℃`，驱动未上报显存温度时退化为单值 `66℃`）
+- 悬停查看细节（单核分布 / 时钟 / 功耗上限 / 核心与显存温度）；点击展开生成阶段对比表
 - Agent 会话中直接调用工具（例）：
   ```
   使用 system_metrics 工具查询当前负载和瓶颈，history=5, generations=5
@@ -182,7 +108,7 @@ dsh plugin --profile web remove dsh-system-monitor-xg
     - id: dsh-system-monitor-xg
       name: 'dsh-system-monitor-xg'
       config:
-        intervalMs: 1000    # 采样间隔（250–60000ms；调大＝更省 CPU）
+        intervalMs: 1000    # 采样间隔（250–10000ms）
         historySize: 3600   # 内存环形缓冲条数
         persist: true       # JSONL 落盘开关
 ```
@@ -197,8 +123,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1
 - 构建脚本自动 junction 类型依赖到 `D:\deepseek-harness`（`$env:DSH_CHECKOUT`
   可覆盖），用 checkout 的 tsc / tsdown，本仓库无需 `npm install`
 - 安装为 `link:` 方式时，改代码后**重新构建即生效**（重启 DSH Web 后）
-- 结构：`src/` host（采样 `cpu.ts` / `gpu.ts`、诊断 `bottleneck.ts`、
-  阶段跟踪 `sampler.ts`、落盘 `ledger.ts`、入口 `index.ts`）、
+- 结构：`src/` host（采样 `cpu.ts` / `gpu.ts` / `thermal.ts`（CPU 温度，
+  5s 慢通道）、诊断 `bottleneck.ts`、阶段跟踪 `sampler.ts`、落盘
+  `ledger.ts`、入口 `index.ts`）、
   `src/client/` 浏览器端（`SystemBar.tsx` 底栏、`fetch.ts` 同步 XHR 轮询）
 
 ### 关键技术决策
@@ -214,9 +141,33 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1
 
 - Windows 下 `nvidia-smi --query-compute-apps` 读进程显存需要管理员权限，
   无权限时 usedMb 为 0（进程名仍可见）
+- 并非所有驱动都暴露显存温度传感器（`temperature.memory` 回 `N/A`，例如
+  RTX PRO 6000 Blackwell 在部分驱动下）：此时温度段只显示核心温度，
+  诊断证据 `memTempC` 为 null 且不参与热限制判定；驱动支持后自动生效
+- Windows 的 CPU 温度来自 WMI `root/wmi:MSAcpi_ThermalZoneTemperature`
+  （全部热区均值，0.1℃ 原始值 /10），经 `powershell -NoProfile` 每 5s 查询
+  一次。`root/wmi` 命名空间常被机器策略限制为仅管理员可读：拒绝访问时
+  底栏不显示 CPU 温度段、`system_metrics` 的 `lastCpuThermalError` 给出原因，
+  5min 冷却后自动重试——以管理员身份启动 DSH（或放宽 WMI 策略）后自动生效，
+  无需改配置。部分笔记本/虚拟机不暴露 ACPI 热区，此时同样为 null
 - 阶段统计依赖采样点落在 prefill/decode 窗口内；极短生成（< 采样间隔）可能
   无采样点
 - 底栏挂在会话页（composer.dock），无会话时不显示（与内置统计行一致）
+
+## 本 fork 的维护差异（v0.1.8，基于上游 v0.1.7）
+
+- **dock 行对齐按需接管**（`src/client/align.ts`）：宿主自己把 dock 收敛到输入框
+  卡片宽时（rc.2 已如此）完全不介入，布局由宿主决定；只有 dock 仍按 root 取宽
+  的形态（如 hero 页）才把行宽显式设为卡片宽并允许换行。容差 2px，避免与宿主
+  抖动互抢。
+- **采样 ts 去重**（`src/client/SystemBar.tsx`）：`intervalMs` 调到 10s/30s 时，
+  客户端仍每 1s 轮询一次；同一 `ts` 不再 `setState`，省掉每个周期里多余的
+  React 提交与对齐计算。
+- **`intervalMs` 上限 10s → 60s**（`src/index.ts`）：原来越界静默夹紧（写 15s 会
+  悄悄变回 10s），现在越界打一条 warn。
+- **移除悬空的 client inject**（`package.json`）：`@deepseek-ai/dsh-client-runtime`
+  在 0.2.0-rc.2 不存在，loader 会跳过，但声明本身是错的。
+- 仓库内提交 `lib/` 产物：`github:` 安装不跑构建，必须带编译结果。
 
 ## License
 

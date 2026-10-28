@@ -1,8 +1,11 @@
 /**
  * The system monitor bar: a `conversation.composer.dock` entry (id
- * 'system-monitor', order 1 — sits right of the built-in stats line) that
- * polls the host's light snapshot once per second and renders CPU / memory /
- * GPU (SM 算力 · 显存带宽 · 显存 · 功耗 · 温度) plus the bottleneck badge.
+ * 'system-monitor', order 2 — below the built-in activity(0)/usage(1) stat
+ * pills) that polls the host's light snapshot once per second and renders CPU (+温度) /
+ * memory / GPU (SM 算力 · 显存带宽 · 显存 · 功耗 · 核心/显存温度) plus the
+ * bottleneck badge. CPU 温度段紧随 CPU 占用段（ACPI 热区，5s 采样；平台无
+ * 传感器/权限不足或旧 host 混装时隐藏）；GPU 温度段显示 `核心/显存℃`
+ * （显存驱动未上报时仅核心温度）。
  *
  * Clicking the bar expands the generation phase comparison (prefill vs
  * decode). 瓶颈徽标颜色：算力=蓝、带宽=琥珀、功耗=橙、热/显存=红、均衡=灰。
@@ -55,6 +58,7 @@ export const SystemBar = memo(function SystemBar(props: PropsRuntime<'conversati
   const wrapRef = useRef<HTMLDivElement>(null)
 
   // 对齐 dock 行：卡片宽当量尺；窗口 / 侧栏 / 卡片尺寸变化后重算。
+  // 宿主自己已对齐（rc.2 的 dock 收敛到卡片宽）时这一步是无操作，见 align.ts。
   useEffect(() => {
     const el = wrapRef.current
     if (el === null) return
@@ -87,9 +91,8 @@ export const SystemBar = memo(function SystemBar(props: PropsRuntime<'conversati
   }, [])
 
   // 1s 轮询最新采样（同步 XHR，见 fetch.ts 的社区踩坑说明）。
-  // 采样间隔由宿主 config.intervalMs 决定（本机 10s）：同一 ts 重复到达时不再
-  // setState —— 否则每个采样周期要白刷 9 次 React 提交 + 底栏 ResizeObserver
-  // 对齐计算，这正是「调了刷新率还是偶尔卡一下」的来源。
+  // 采样间隔由宿主 config.intervalMs 决定（默认 1s，可配到 60s）：同一 ts 重复
+  // 到达时不再 setState —— 否则每个采样周期要白刷多次 React 提交 + 底栏对齐计算。
   useEffect(() => {
     let alive = true
     let lastTs = -1
@@ -117,7 +120,7 @@ export const SystemBar = memo(function SystemBar(props: PropsRuntime<'conversati
   const badgeColor = bottleneck ? KIND_COLORS[bottleneck.kind] ?? '#9aa0aa' : undefined
 
   return (
-    <div className="dsm-wrap" ref={wrapRef} data-dsm-align="7">
+    <div className="dsm-wrap" ref={wrapRef} data-dsm-align="8">
       <button
         type="button"
         className="dsm-bar"
@@ -134,6 +137,14 @@ export const SystemBar = memo(function SystemBar(props: PropsRuntime<'conversati
               text={`${t('cpu')} ${point.cpu ? `${point.cpu.percent.toFixed(0)}%` : '…'}`}
               title={point.cpu ? `CPU ${point.cpu.percent.toFixed(1)}% (${point.cpu.perCore.map(p => p.toFixed(0)).join('/')}%)` : undefined}
             />
+            {/* CPU 温度段：仅平台有传感器且权限允许时渲染（旧 host 混装缺字段 → undefined，不渲染） */}
+            {point.cpu !== null && typeof point.cpu.tempC === 'number' ? (
+              <Segment
+                className="dsm-cputemp"
+                text={`${point.cpu.tempC.toFixed(0)}℃`}
+                title={`CPU 温度 ${point.cpu.tempC.toFixed(1)}℃（ACPI 热区，5s 采样）`}
+              />
+            ) : null}
             <Segment
               className="dsm-fixed-mem"
               text={`${t('memory')} ${point.memory ? `${point.memory.percent.toFixed(0)}%` : '…'}`}
@@ -155,7 +166,14 @@ export const SystemBar = memo(function SystemBar(props: PropsRuntime<'conversati
                   title={`VRAM ${(gpu.vramUsedMb / 1024).toFixed(2)}/${(gpu.vramTotalMb / 1024).toFixed(2)} GiB`}
                 />
                 <Segment className="dsm-fixed-pwr" text={`${gpu.powerDrawW.toFixed(0)}W`} title={`功耗 ${gpu.powerDrawW.toFixed(0)}W${gpu.powerLimitW > 0 ? `/${gpu.powerLimitW.toFixed(0)}W` : ''}`} />
-                <Segment className="dsm-fixed-temp" text={`${gpu.tempC.toFixed(0)}℃`} title={`温度 ${gpu.tempC.toFixed(0)}℃ · SM 时钟 ${gpu.smClockMhz.toFixed(0)}/${gpu.smClockMaxMhz.toFixed(0)} MHz`} />
+                {(() => {
+                  const coreT = gpu.tempC.toFixed(0)
+                  // 字段缺失（旧 host 混装）或驱动未上报（null）都只显示核心温度
+                  const memT = typeof gpu.memTempC === 'number' ? gpu.memTempC.toFixed(0) : null
+                  const text = memT !== null ? `${coreT}/${memT}℃` : `${coreT}℃`
+                  const title = `核心温度 ${coreT}℃${memT !== null ? ` / 显存温度 ${memT}℃` : ''} · SM 时钟 ${gpu.smClockMhz.toFixed(0)}/${gpu.smClockMaxMhz.toFixed(0)} MHz`
+                  return <Segment className="dsm-fixed-temp" text={text} title={title} />
+                })()}
               </>
             )}
             {bottleneck != null && (

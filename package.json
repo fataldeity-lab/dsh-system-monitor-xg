@@ -1,6 +1,6 @@
 {
   "name": "dsh-system-monitor-xg",
-  "version": "0.1.6",
+  "version": "0.1.8",
   "description": "DSH 系统负载监控插件：CPU/内存/GPU 算力与显存带宽利用率、显存、功耗、温度实时显示，自动诊断推理瓶颈（算力 vs 带宽 vs 功耗 vs 热 vs 显存容量），Web 底栏 + agent 工具 + prefill/decode 阶段对比 + 负载 JSONL 落盘。",
   "keywords": [
     "deepseek",
@@ -38,7 +38,6 @@
   ],
   "license": "MIT",
   "author": "dsh-system-monitor-xg contributors",
-  "x-fork-of": "https://github.com/liuhuagang/dsh-system-monitor-xg",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/fataldeity-lab/dsh-system-monitor-xg.git"
@@ -66,7 +65,7 @@
   "scripts": {
     "build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1",
     "build:sh": "bash scripts/build.sh",
-    "test": "node --test tests/",
+    "test": "node --test tests/logic.spec.mjs",
     "build:client": "tsdown"
   },
   "devDependencies": {

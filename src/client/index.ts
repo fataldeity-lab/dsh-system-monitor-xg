@@ -1,7 +1,8 @@
 /**
  * dsh-system-monitor-xg client entry: installs stylesheet and locale, then
  * registers the system bar on `conversation.composer.dock` (id
- * 'system-monitor', order 1 — next to the built-in stats line at order 0).
+ * 'system-monitor', order 2 — below the built-in activity(0)/usage(1) stat
+ * pills, which DSH v0.2.0 split from the single 'stats' entry at order 0).
  *
  * @module dsh-system-monitor-xg/client
  */
@@ -28,22 +29,36 @@ type ClientContext = {
 
 /** Bar + panel styles. Class names prefixed `dsm-` to stay collision-free. */
 const STYLES = `
-/* 兜底（不依赖 JS）：把 dock 行宽收敛到输入框卡片，并允许换行。
-   dock 自带的 max-width:100% 参照 root（窗口减侧边留白）而不是卡片，所以会比输入框宽；
-   必须显式给 width —— 只设 max-width 不够：换行 flex 容器的 max-content 会缩成最宽一项。 */
-div:has(> [data-slot='conversation.composer.dock']) {
-  width: min(100%, var(--dsh-composer-card-max-width, 100%));
+.dsm-wrap {
+  display: block;
+  width: 100%;
+  max-width: var(--dsh-composer-card-max-width, 780px);
+  margin: 0 auto;
+  box-sizing: border-box;
+  /* 新 host 的 composer.dock 是横向 flex 条（内置统计 pill + 槽位条目 +
+     上下文百分比排同一行）。flex 0 0 100% 让底栏在条内独占一整行，margin
+     auto 保持居中；旧 host 的块级/纵向布局里 flex 被忽略，行为不变。 */
+  flex: 0 0 100%;
+}
+/* host 的 .dock 是 nowrap：basis 100% 的项不会换行，而是整行横向溢出
+   （底栏内容被挤到侧栏/视口外）。给容器补 flex-wrap: wrap。槽位渲染点带
+   一层 div[data-slot] 锚点（display:contents，布局透明；其子才是 flex
+   项）——.dsm-wrap 的直接父是锚点而非 .dock，容器须经锚点反查：“以
+   composer.dock 锚点为直接子元素的 div”即 host 的 .dock（锚点是契约化的
+   可寻址接缝）。首位选择器兜底宿主去掉锚点的形态（条目直接为 .dock 子
+   元素），两者命中同一目标、互不冲突。特异性 (0,1,2)/(0,1,1) 均高于
+   host 的 .dock 类 (0,1,0)。 */
+div:has(> div[data-slot='conversation.composer.dock']),
+div:has(> .dsm-wrap) {
   flex-wrap: wrap;
 }
-.dsm-wrap {
-  /* 独占一行：宿主统计行 order 默认 0，本插件 order 1 → 排在统计行下方 */
-  flex: 1 0 100%;
-  order: 1;
-  /* dock 的 gap 是 12px，吃掉 8px，免得两行之间看起来空了一行 */
-  margin: -8px 0 0;
-  display: block;
-  min-width: 0;
-  box-sizing: border-box;
+/* wrap 生效后，dock 的末个子元素（内置 ContextMeter）会独自占一行：
+   order -1 把它拉回第 1 行，与统计 pill 组成居中的首行条带；:not 守卫
+   保证槽位锚点/兄弟监控条不会被误拉。 */
+div:has(> div[data-slot='conversation.composer.dock'])
+  > :last-child:not(div[data-slot='conversation.composer.dock']),
+div:has(> .dsm-wrap) > :last-child:not(.dsm-wrap):not(.dsg-wrap) {
+  order: -1;
 }
 .dsm-bar {
   display: flex;
@@ -54,7 +69,7 @@ div:has(> [data-slot='conversation.composer.dock']) {
   row-gap: 2px;
   width: 100%;
   margin: 0;
-  padding: 0; /* v7: 与 dock 的 row-gap 叠加会显得空一行 */
+  padding: 4px 0 0;
   border: none;
   background: transparent;
   font: inherit;
@@ -77,6 +92,10 @@ div:has(> [data-slot='conversation.composer.dock']) {
 .dsm-fixed-mem {
   min-width: 5.6em;
 }
+.dsm-cputemp {
+  /* CPU 温度最宽 99℃；平台无传感器/权限不足时不渲染，出现后不再伸缩 */
+  min-width: 2.6em;
+}
 .dsm-fixed-gpu {
   min-width: 14em;
 }
@@ -84,9 +103,12 @@ div:has(> [data-slot='conversation.composer.dock']) {
   /* 22.00/24.00 两位小数，中英文标签最宽约 8.6em */
   min-width: 8.8em;
 }
-.dsm-fixed-pwr,
-.dsm-fixed-temp {
+.dsm-fixed-pwr {
   min-width: 3em;
+}
+.dsm-fixed-temp {
+  /* 核心/显存双温度，最宽 99/99℃（约 4.5em）；仅核心温度时不引起伸缩 */
+  min-width: 5em;
 }
 .dsm-sep {
   color: var(--dsw-alias-border-l3, rgba(0, 0, 0, 0.25));
@@ -179,10 +201,13 @@ export const inject = ['slots', 'locale']
 export function apply(ctx: ClientContext): void {
   ctx.effect(installStyles, 'dsh-system-monitor-xg: styles')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-system-monitor-xg: locale')
+  // DSH v0.2.0 起内置统计拆成两个 dock 条目：activity(order 0)、usage(order 1)。
+  // 本条取 order 2 避免与 usage 撞序（list 槽同序按注册先后稳定排序，撞序会
+  // 把内置 pill 与监控条拆进不同行，底栏错位）；flex 0 0 100% 仍保证独占一行。
   ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
     name: 'conversation.composer.dock',
     id: 'system-monitor',
-    order: 1,
+    order: 2,
     locale: NS,
   }, SystemBar))
 }
