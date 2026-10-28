@@ -9,11 +9,27 @@ DSH（DeepSeek Harness）宿主机负载监控插件：**CPU / 内存 / GPU 算�
 [![npm version](https://img.shields.io/npm/v/dsh-system-monitor-xg)](https://www.npmjs.com/package/dsh-system-monitor-xg)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-## 这个 fork（fataldeity-lab）改了什么 · v0.1.5
+## 这个 fork（fataldeity-lab）改了什么 · v0.1.6
 
 上游：<https://github.com/liuhuagang/dsh-system-monitor-xg>（MIT，原作者保留版权）。
-本 fork 基于 **npm 上的 0.1.4**，只加一件事：修「DSH Web 底栏被插件挤爆 / 整条底栏比输入框宽 /
-插件被压成两排」。**lib/ 已提交**，所以从 GitHub 直接装不需要构建。
+本 fork 基于 **npm 上的 0.1.4**：先修「DSH Web 底栏被插件挤爆 / 整条底栏比输入框宽 /
+插件被压成两排」，0.1.6 再补三处设置/性能问题（见下）。**lib/ 已提交**，所以从 GitHub
+直接装不需要构建。
+
+### v0.1.6 变更（在 0.1.5 布局修复之上）
+
+1. **底栏渲染节流**：同一采样点（`ts` 相同）不再 `setState`。宿主采样间隔可配到 10s，
+   但客户端仍每秒轮询一次——以前每个采样周期要白刷 9 次 React 提交 + 底栏
+   ResizeObserver 对齐计算，这是「把刷新率调下来之后仍偶发卡一下」的残留来源。
+2. **`intervalMs` 上限 10s → 60s，越界时 `console.warn`**：以前写 15s/30s 会被静默夹回
+   10s，配置看起来生效了、实际没有，非常难排查。
+3. **删掉 `dsh.client.inject` 里不存在的 `@deepseek-ai/dsh-client-runtime`**：0.2.x 没有
+   这个包（loader 会静默跳过，所以不致命，但属于错误声明，也是各种「体检说兼容性未知」
+   的噪音来源）。
+
+> 不含上游 0.1.5–0.1.7 的 CPU 温度 / `thermal.ts` 热诊断 / GPU 稳健性改进。要那些能力
+> 需要把这里的布局修复 rebase 到上游 0.1.7（上游的 CPU 温度走独立慢通道，
+> 注释里明确写了「1s 会占掉半个核」，直接叠加到本 fork 的 1s 轮询上反而会更卡）。
 
 ### 从 GitHub 安装
 
@@ -21,7 +37,7 @@ DSH（DeepSeek Harness）宿主机负载监控插件：**CPU / 内存 / GPU 算�
 
 ```json
 "dependencies": {
-  "dsh-system-monitor-xg": "github:fataldeity-lab/dsh-system-monitor-xg#v0.1.5"
+  "dsh-system-monitor-xg": "github:fataldeity-lab/dsh-system-monitor-xg#v0.1.6"
 }
 ```
 
@@ -166,7 +182,7 @@ dsh plugin --profile web remove dsh-system-monitor-xg
     - id: dsh-system-monitor-xg
       name: 'dsh-system-monitor-xg'
       config:
-        intervalMs: 1000    # 采样间隔（250–10000ms）
+        intervalMs: 1000    # 采样间隔（250–60000ms；调大＝更省 CPU）
         historySize: 3600   # 内存环形缓冲条数
         persist: true       # JSONL 落盘开关
 ```

@@ -37,8 +37,14 @@ export interface HostConfig {
 }
 
 function resolveConfig(raw: HostConfig | undefined): Config {
+  const wanted = Number(raw?.intervalMs ?? 1000)
+  // 上限 60s：以前钉在 10s，配置写成 15s/30s 会被静默夹回 10s，很难排查。
+  const intervalMs = Math.max(250, Math.min(60_000, Number.isFinite(wanted) ? wanted : 1000))
+  if (intervalMs !== wanted) {
+    console.warn(`[dsh-system-monitor-xg] intervalMs=${String(raw?.intervalMs)} 超出 250..60000 或非数字，已按 ${intervalMs}ms 采样`)
+  }
   return {
-    intervalMs: Math.max(250, Math.min(10_000, raw?.intervalMs ?? 1000)),
+    intervalMs,
     historySize: Math.max(60, Math.min(86_400, raw?.historySize ?? 3600)),
     persist: raw?.persist ?? true,
   }

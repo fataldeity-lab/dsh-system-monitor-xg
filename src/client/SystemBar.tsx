@@ -87,12 +87,19 @@ export const SystemBar = memo(function SystemBar(props: PropsRuntime<'conversati
   }, [])
 
   // 1s 轮询最新采样（同步 XHR，见 fetch.ts 的社区踩坑说明）。
+  // 采样间隔由宿主 config.intervalMs 决定（本机 10s）：同一 ts 重复到达时不再
+  // setState —— 否则每个采样周期要白刷 9 次 React 提交 + 底栏 ResizeObserver
+  // 对齐计算，这正是「调了刷新率还是偶尔卡一下」的来源。
   useEffect(() => {
     let alive = true
+    let lastTs = -1
     const poll = (): void => {
       if (!alive) return
       const next = fetchSnapshotSync()
-      if (next !== null) setPoint(next)
+      if (next !== null && next.ts !== lastTs) {
+        lastTs = next.ts
+        setPoint(next)
+      }
       window.setTimeout(poll, 1000)
     }
     poll()
