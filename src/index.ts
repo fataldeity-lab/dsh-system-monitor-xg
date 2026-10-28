@@ -37,9 +37,19 @@ export interface HostConfig {
   persist?: boolean
 }
 
+const MIN_INTERVAL_MS = 250
+const MAX_INTERVAL_MS = 60_000
+
 function resolveConfig(raw: HostConfig | undefined): Config {
+  // 原实现把上限钉在 10s 且越界静默夹住，写 15s/30s 会悄悄变回 10s。放宽到 60s，
+  // 越界时打一条 warn，别让配置看起来生效了其实没有。
+  const requested = raw?.intervalMs
+  const intervalMs = Math.max(MIN_INTERVAL_MS, Math.min(MAX_INTERVAL_MS, requested ?? 1000))
+  if (requested !== undefined && (!Number.isFinite(requested) || requested !== intervalMs)) {
+    console.warn(`[dsh-system-monitor-xg] intervalMs ${String(requested)} out of range, using ${intervalMs}ms (${MIN_INTERVAL_MS}..${MAX_INTERVAL_MS})`)
+  }
   return {
-    intervalMs: Math.max(250, Math.min(10_000, raw?.intervalMs ?? 1000)),
+    intervalMs,
     historySize: Math.max(60, Math.min(86_400, raw?.historySize ?? 3600)),
     persist: raw?.persist ?? true,
   }

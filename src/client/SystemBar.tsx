@@ -13,9 +13,10 @@
  * @module dsh-system-monitor-xg/client/SystemBar
  */
 
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { fetchGenerationsSync, fetchSnapshotSync, type GenerationSummary, type SamplePoint } from './fetch.ts'
+import { alignDockRow } from './align.ts'
 import { NS, type zh } from './locales.ts'
 
 type T = (key: keyof typeof zh) => string
@@ -54,14 +55,54 @@ export const SystemBar = memo(function SystemBar(props: PropsRuntime<'conversati
   const [point, setPoint] = useState<SamplePoint | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [generations, setGenerations] = useState<GenerationSummary[]>([])
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  // 对齐 dock 行：卡片宽当量尺；窗口 / 侧栏 / 卡片尺寸变化后重算。
+  // 宿主自己已对齐（rc.2 的 dock 收敛到卡片宽）时这一步是无操作，见 align.ts。
+  useEffect(() => {
+    const el = wrapRef.current
+    if (el === null) return
+    let raf = 0
+    const observed = new Set<Element>()
+    const ro = new ResizeObserver(() => { schedule() })
+    const observe = (target: Element | null | undefined): void => {
+      if (target === null || target === undefined || observed.has(target)) return
+      observed.add(target)
+      ro.observe(target)
+    }
+    const run = (): void => {
+      raf = 0
+      const out = alignDockRow(el)
+      if (out === null) return
+      observe(out.row)
+      observe(out.row.parentElement)
+    }
+    const schedule = (): void => {
+      if (raf !== 0) return
+      raf = window.requestAnimationFrame(run)
+    }
+    schedule()
+    window.addEventListener('resize', schedule)
+    return () => {
+      window.removeEventListener('resize', schedule)
+      ro.disconnect()
+      if (raf !== 0) window.cancelAnimationFrame(raf)
+    }
+  }, [])
 
   // 1s 轮询最新采样（同步 XHR，见 fetch.ts 的社区踩坑说明）。
+  // 采样间隔由宿主 config.intervalMs 决定（默认 1s，可配到 60s）：同一 ts 重复
+  // 到达时不再 setState —— 否则每个采样周期要白刷多次 React 提交 + 底栏对齐计算。
   useEffect(() => {
     let alive = true
+    let lastTs = -1
     const poll = (): void => {
       if (!alive) return
       const next = fetchSnapshotSync()
-      if (next !== null) setPoint(next)
+      if (next !== null && next.ts !== lastTs) {
+        lastTs = next.ts
+        setPoint(next)
+      }
       window.setTimeout(poll, 1000)
     }
     poll()
@@ -79,7 +120,7 @@ export const SystemBar = memo(function SystemBar(props: PropsRuntime<'conversati
   const badgeColor = bottleneck ? KIND_COLORS[bottleneck.kind] ?? '#9aa0aa' : undefined
 
   return (
-    <div className="dsm-wrap">
+    <div className="dsm-wrap" ref={wrapRef} data-dsm-align="8">
       <button
         type="button"
         className="dsm-bar"

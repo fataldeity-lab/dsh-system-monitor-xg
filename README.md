@@ -154,6 +154,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1
   无采样点
 - 底栏挂在会话页（composer.dock），无会话时不显示（与内置统计行一致）
 
+## 本 fork 的维护差异（v0.1.8，基于上游 v0.1.7）
+
+- **dock 行对齐按需接管**（`src/client/align.ts`）：宿主自己把 dock 收敛到输入框
+  卡片宽时（rc.2 已如此）完全不介入，布局由宿主决定；只有 dock 仍按 root 取宽
+  的形态（如 hero 页）才把行宽显式设为卡片宽并允许换行。容差 2px，避免与宿主
+  抖动互抢。
+- **采样 ts 去重**（`src/client/SystemBar.tsx`）：`intervalMs` 调到 10s/30s 时，
+  客户端仍每 1s 轮询一次；同一 `ts` 不再 `setState`，省掉每个周期里多余的
+  React 提交与对齐计算。
+- **`intervalMs` 上限 10s → 60s**（`src/index.ts`）：原来越界静默夹紧（写 15s 会
+  悄悄变回 10s），现在越界打一条 warn。
+- **移除悬空的 client inject**（`package.json`）：`@deepseek-ai/dsh-client-runtime`
+  在 0.2.0-rc.2 不存在，loader 会跳过，但声明本身是错的。
+- 仓库内提交 `lib/` 产物：`github:` 安装不跑构建，必须带编译结果。
+
 ## License
 
 MIT
